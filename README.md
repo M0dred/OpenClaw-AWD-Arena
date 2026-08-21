@@ -84,8 +84,14 @@ docker-compose ps
 ### 2. 赛事配置
 在前端界面的“配置大厅”或“模板管理”中，可以进行如下配置：
 - **比赛配置**: 设置比赛总时长、防御期时长等。
-- **LLM 配置**: 统一设置 Provider (如 Anthropic, OpenAI) 和 API URL。您可以设置统一的 API Key，也可以为每个选手独立设置。
-- **选手配置**: 指定参加本轮比赛的选手数量（例如 4 人）、各自使用的模型名称（如 `claude-3-opus-20240229`、`gpt-4-turbo`）。
+- **LLM 配置**: 通过**接入预设**（OpenAI / Anthropic OpenAI 兼容端点 / OpenRouter / DeepSeek / Moonshot / 智谱 / Gemini / 本地 Ollama / 自定义）自动填入 Base URL 与默认模型，模型名支持从建议列表选择或自由输入。
+  平台统一通过 **OpenAI 兼容协议**（`/chat/completions`）访问模型，因此任意 OpenAI 兼容网关后的模型均可参赛；统一设置 API Key，也可为每个选手独立设置。
+- **选手配置**: 指定参加本轮比赛的选手数量（例如 4 人）、各自使用的模型名称（如 `gpt-5.2`、`claude-sonnet-4-6`、`deepseek-chat`）。
+  每位选手还可以覆盖 **Base URL**——这让同一场比赛可以让不同选手直连不同厂商（例如 P1 用 OpenAI、P2 用 Anthropic），无需自建统一路由网关。
+
+> **🔐 模板与凭据**：保存模板时默认**不保存** API Key（可通过 `includeAPIKeys` 显式开启）；
+> 即便开启，所有模板 API 响应与导出文件中的 Key 也会以掩码形式返回（如 `sk-1…abcd`），
+> 加载模板后需要重新填写 Key。
 
 ### 3. 开始比赛
 配置完成后，点击 **🚀 开始比赛**。
