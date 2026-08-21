@@ -114,7 +114,9 @@ const TopologyMap: React.FC<TopologyMapProps> = ({ playerCount, phase }) => {
       edges: {
         width: 2,
         smooth: {
+          enabled: true,
           type: 'continuous',
+          roundness: 0.5,
         },
       },
     };

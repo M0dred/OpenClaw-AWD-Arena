@@ -43,10 +43,102 @@ type ConfigState = {
   agentImage?: string
 }
 
-const defaultPlayer = (idx: number, port: number): Player => ({
+type LlmPreset = {
+  key: string
+  label: string
+  baseUrl: string
+  defaultModel: string
+  models: string[]
+  hint?: string
+}
+
+// 平台运行时统一走 OpenAI 兼容协议（/chat/completions），
+// 因此所有预设都必须是 OpenAI 兼容端点；预设只负责填 Base URL 和模型建议，
+// 模型名始终可自由输入。
+const LLM_PRESETS: LlmPreset[] = [
+  {
+    key: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-5.2',
+    models: ['gpt-5.2', 'gpt-5.1', 'gpt-5', 'gpt-5-mini', 'o4-mini'],
+  },
+  {
+    key: 'anthropic',
+    label: 'Anthropic（OpenAI 兼容端点）',
+    baseUrl: 'https://api.anthropic.com/v1',
+    defaultModel: 'claude-sonnet-4-6',
+    models: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+  },
+  {
+    key: 'openrouter',
+    label: 'OpenRouter（多模型路由）',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'anthropic/claude-sonnet-4-6',
+    models: [
+      'anthropic/claude-sonnet-4-6',
+      'openai/gpt-5.2',
+      'google/gemini-3-pro',
+      'deepseek/deepseek-chat',
+      'qwen/qwen3-max',
+    ],
+    hint: '一个 Key 混用各家模型，适合多模型对局',
+  },
+  {
+    key: 'deepseek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+  },
+  {
+    key: 'moonshot',
+    label: 'Moonshot（Kimi）',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    defaultModel: 'kimi-k2-0905-preview',
+    models: ['kimi-k2-0905-preview', 'kimi-k2-turbo-preview'],
+  },
+  {
+    key: 'zhipu',
+    label: '智谱（GLM）',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    defaultModel: 'glm-4.6',
+    models: ['glm-4.6', 'glm-4.5'],
+  },
+  {
+    key: 'gemini',
+    label: 'Google Gemini（OpenAI 兼容端点）',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-3-pro-preview',
+    models: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
+  },
+  {
+    key: 'ollama',
+    label: '本地 Ollama / vLLM',
+    baseUrl: 'http://host.docker.internal:11434/v1',
+    defaultModel: 'qwen3:32b',
+    models: ['qwen3:32b', 'llama3.1:70b', 'deepseek-r1:32b'],
+    hint: '本地推理无需 API Key',
+  },
+  {
+    key: 'custom',
+    label: '自定义（OpenAI 兼容）',
+    baseUrl: '',
+    defaultModel: '',
+    models: [],
+    hint: '填写任意 OpenAI 兼容网关地址',
+  },
+]
+
+const DEFAULT_PRESET = LLM_PRESETS[0]
+
+const findPreset = (key: string): LlmPreset =>
+  LLM_PRESETS.find((p) => p.key === key) ?? LLM_PRESETS[LLM_PRESETS.length - 1]
+
+const defaultPlayer = (idx: number, port: number, model = DEFAULT_PRESET.defaultModel): Player => ({
   id: idx,
   name: `Player ${idx}`,
-  model: 'default-model',
+  model,
   apiKey: '',
   gatewayPort: port,
   backendType: 'openclaw',
@@ -72,8 +164,8 @@ const ConfigPage: React.FC = () => {
     totalDuration: 20,
     defenseDuration: 10,
     repeatCount: 1,
-    llmProvider: 'OpenAI',
-    llmBaseUrl: 'https://api.openai.com/v1',
+    llmProvider: DEFAULT_PRESET.key,
+    llmBaseUrl: DEFAULT_PRESET.baseUrl,
     llmApiKey: '',
     llmProxy: '',
     playerCount: 4,
@@ -83,6 +175,18 @@ const ConfigPage: React.FC = () => {
     targetImage: 'openclaw/ctf-target:v1',
     agentImage: 'alpine/openclaw:latest',
   })
+
+  const currentPreset = findPreset(config.llmProvider)
+
+  const applyPreset = (key: string) => {
+    const preset = findPreset(key)
+    setConfig((c) => ({
+      ...c,
+      llmProvider: preset.key,
+      llmBaseUrl: preset.baseUrl || c.llmBaseUrl,
+      players: c.players.map((p) => ({ ...p, model: preset.defaultModel || p.model })),
+    }))
+  }
 
   const attackDuration = Math.max(0, config.totalDuration - config.defenseDuration)
   const canStart = config.matchName.trim().length > 0 && config.players.length > 0
@@ -226,6 +330,8 @@ const ConfigPage: React.FC = () => {
         baseUrl: config.llmBaseUrl,
         apiKey: config.llmApiKey,
         proxy: config.llmProxy,
+        // 全局回退模型：选手 model 留空时后端使用该值
+        model: config.players.find((p) => p.model.trim())?.model.trim() || currentPreset.defaultModel || undefined,
       },
       players: config.players.map((p) => ({
         id: p.id,
@@ -299,7 +405,7 @@ const ConfigPage: React.FC = () => {
   }
 
   const useSameModelAll = () => {
-    const m = config.players[0]?.model ?? 'default-model'
+    const m = config.players[0]?.model || currentPreset.defaultModel || ''
     setConfig((c) => ({ ...c, players: c.players.map((p) => ({ ...p, model: m })) }))
   }
   const autoFillNames = () => {
@@ -367,18 +473,25 @@ const ConfigPage: React.FC = () => {
         </div>
         <div className="bg-slate-800/60 border border-slate-700 rounded-md p-4 space-y-4">
           <h3 className="text-lg font-semibold">LLM 配置</h3>
+          <div className="text-xs text-slate-400">
+            平台通过 OpenAI 兼容协议（<code>/chat/completions</code>）访问模型，
+            选择预设会自动填入对应 Base URL 并提供模型建议；模型名可自由输入。
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-300">Provider</label>
-              <select className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.llmProvider} onChange={(e) => update('llmProvider', e.target.value)}>
-                <option>OpenAI</option>
-                <option>Anthropic</option>
-                <option>Custom</option>
+              <label className="block text-sm text-slate-300">接入预设</label>
+              <select className="w-full bg-slate-700 rounded-md px-2 py-1" value={currentPreset.key} onChange={(e) => applyPreset(e.target.value)}>
+                {LLM_PRESETS.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
               </select>
+              {currentPreset.hint && (
+                <div className="mt-1 text-xs text-cyan-300/80">{currentPreset.hint}</div>
+              )}
             </div>
             <div>
               <label className="block text-sm text-slate-300">Base URL</label>
-              <input className="w-full bg-slate-700 rounded-md px-2 py-1" value={config.llmBaseUrl} onChange={(e) => update('llmBaseUrl', e.target.value)} />
+              <input className="w-full bg-slate-700 rounded-md px-2 py-1" placeholder="https://your-openai-compatible-gateway/v1" value={config.llmBaseUrl} onChange={(e) => update('llmBaseUrl', e.target.value)} />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm text-slate-300">API Key</label>
@@ -391,7 +504,7 @@ const ConfigPage: React.FC = () => {
             <div className="md:col-span-2 flex justify-end">
               <button 
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md text-sm text-white disabled:opacity-50"
-                onClick={() => testLlm(config.llmBaseUrl, config.llmApiKey ?? '', config.llmProxy, config.players[0]?.model || 'default-model', true)}
+                onClick={() => testLlm(config.llmBaseUrl, config.llmApiKey ?? '', config.llmProxy, config.players[0]?.model || currentPreset.defaultModel, true)}
                 disabled={testingGlobalLlm}
               >
                 {testingGlobalLlm ? '测试中...' : '测试全局 API'}
@@ -403,6 +516,11 @@ const ConfigPage: React.FC = () => {
 
       <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4">
         <h3 className="text-lg font-semibold mb-2">选手配置</h3>
+        <datalist id="llm-model-suggestions">
+          {(currentPreset.models.length ? currentPreset.models : LLM_PRESETS.flatMap((p) => p.models)).map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
         <div className="flex items-center gap-2 mb-3 text-sm text-slate-300">
           <span>选手数:</span>
           {[2,3,4,5,6,8,10].map((n) => (
@@ -424,14 +542,20 @@ const ConfigPage: React.FC = () => {
                     {testingPlayerId === p.id ? '测试中...' : '测试可用性'}
                   </button>
                 </div>
-                <input className="w-full bg-slate-600 rounded-md px-2 py-1" value={p.model} onChange={(e) => {
-                  const nm = e.target.value
-                  setConfig((c) => {
-                    const players = c.players.slice()
-                    players[idx] = { ...players[idx], model: nm }
-                    return { ...c, players }
-                  })
-                }} />
+                <input
+                  list="llm-model-suggestions"
+                  className="w-full bg-slate-600 rounded-md px-2 py-1"
+                  placeholder={currentPreset.defaultModel || '输入或选择模型名'}
+                  value={p.model}
+                  onChange={(e) => {
+                    const nm = e.target.value
+                    setConfig((c) => {
+                      const players = c.players.slice()
+                      players[idx] = { ...players[idx], model: nm }
+                      return { ...c, players }
+                    })
+                  }}
+                />
               </div>
               <div>
                 <label className="text-xs text-slate-200">API Key</label>
