@@ -8,7 +8,11 @@ aiohttp==3.9.3
 aiosqlite==0.20.0
 
 # Testing
+# 测试依赖不固定具体版本，便于在不同 Python 版本上跑测试
+# （pydantic 2.5.x 等生产 pin 依赖 C 扩展的预编译 wheel，
+#  仅在 Python ≤ 3.12 上可用，测试套件对此无依赖）
 pytest
 pytest-asyncio
 pytest-cov
 pytest-mock
+httpx  # 端点集成测试 (ASGITransport)
