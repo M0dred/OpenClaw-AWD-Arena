@@ -3547,6 +3547,60 @@ app.add_middleware(
 )
 
 
+# ==================== Secret Masking ====================
+
+MASKED_SECRET_PLACEHOLDER = "****"
+
+
+def _mask_secret(value: Optional[str]) -> Optional[str]:
+    """掩码 API Key：保留首尾 4 字符便于辨认，过短则完全隐藏。"""
+    if not value or not isinstance(value, str):
+        return value
+    if len(value) <= 8:
+        return MASKED_SECRET_PLACEHOLDER
+    return f"{value[:4]}…{value[-4:]}"
+
+
+def _is_masked_secret(value: Optional[str]) -> bool:
+    return isinstance(value, str) and (
+        MASKED_SECRET_PLACEHOLDER in value or "…" in value
+    )
+
+
+def _mask_config_dict(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """返回脱敏后的 config 深拷贝（llm.apiKey 与 players[].apiKey）。"""
+    masked = json.loads(json.dumps(config or {}))
+    llm = masked.get("llm")
+    if isinstance(llm, dict):
+        llm["apiKey"] = _mask_secret(llm.get("apiKey")) or ""
+    players = masked.get("players")
+    if isinstance(players, list):
+        for player in players:
+            if isinstance(player, dict) and player.get("apiKey"):
+                player["apiKey"] = _mask_secret(player.get("apiKey"))
+    return masked
+
+
+def _mask_template(template: Dict[str, Any]) -> Dict[str, Any]:
+    """返回脱敏后的模板副本；原对象保持明文供内部流程使用。"""
+    masked = dict(template)
+    masked["config"] = _mask_config_dict(template.get("config"))
+    return masked
+
+
+def _normalize_chat_completions_url(base_url: str) -> str:
+    """归一化 Base URL 为完整 chat/completions 端点。
+
+    容错用户粘贴的常见形式：带尾部斜杠、误粘完整 /chat/completions 路径。
+    """
+    url = (base_url or "").strip().rstrip("/")
+    for suffix in ("/chat/completions", "/completions"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+            break
+    return f"{url}/chat/completions"
+
+
 # ==================== API Auth ====================
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -3796,13 +3850,13 @@ async def list_templates(tags: Optional[str] = None):
     if tags:
         tag_list = [t.strip() for t in tags.split(",")]
         templates = [t for t in templates if any(tag in t.get("tags", []) for tag in tag_list)]
-    return {"templates": templates}
+    return {"templates": [_mask_template(t) for t in templates]}
 
 @app.post("/api/templates", dependencies=[Depends(verify_api_key)])
 async def create_template(data: ConfigTemplate):
     """保存配置为模板"""
     tpl = template_store.create(data)
-    return {"success": True, "templateId": tpl["id"], "template": tpl}
+    return {"success": True, "templateId": tpl["id"], "template": _mask_template(tpl)}
 
 @app.get("/api/templates/{template_id}", dependencies=[Depends(verify_api_key)])
 async def get_template(template_id: str):
@@ -3810,13 +3864,13 @@ async def get_template(template_id: str):
     tpl = template_store.get(template_id)
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")
-    return {"template": tpl}
+    return {"template": _mask_template(tpl)}
 
 @app.put("/api/templates/{template_id}", dependencies=[Depends(verify_api_key)])
 async def update_template(template_id: str, data: ConfigTemplate):
     """更新模板"""
     tpl = template_store.update(template_id, data)
-    return {"success": True, "template": tpl}
+    return {"success": True, "template": _mask_template(tpl)}
 
 @app.delete("/api/templates/{template_id}", dependencies=[Depends(verify_api_key)])
 async def delete_template(template_id: str):
@@ -3840,7 +3894,7 @@ async def export_template(template_id: str, background_tasks: BackgroundTasks):
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False, encoding="utf-8"
     ) as f:
-        json.dump(tpl, f, ensure_ascii=False, indent=2)
+        json.dump(_mask_template(tpl), f, ensure_ascii=False, indent=2)
         tmp_path = f.name
     safe_name = tpl["name"].replace("/", "-").replace(" ", "_")
     background_tasks.add_task(os.unlink, tmp_path)
@@ -3866,7 +3920,7 @@ async def import_template(file: UploadFile = File(...)):
         config=data.get("config", {}),
     )
     tpl = template_store.create(tpl_data)
-    return {"success": True, "templateId": tpl["id"], "template": tpl}
+    return {"success": True, "templateId": tpl["id"], "template": _mask_template(tpl)}
 
 
 # --- LLM 调试 ---
@@ -3889,12 +3943,13 @@ async def test_llm_connection(req: LLMTestRequest):
     }
 
     proxy = req.proxy if req.proxy else None
-    
+    request_url = _normalize_chat_completions_url(req.baseUrl)
+
     start_time = time.time()
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{req.baseUrl}/chat/completions",
+                request_url,
                 json=payload,
                 headers=headers,
                 proxy=proxy,

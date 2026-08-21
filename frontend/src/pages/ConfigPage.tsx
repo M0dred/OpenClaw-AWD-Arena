@@ -250,11 +250,13 @@ const ConfigPage: React.FC = () => {
                     id: p.id ?? i + 1,
                     name: p.name ?? `Player ${p.id ?? i + 1}`,
                     model: p.model ?? c.players[i]?.model ?? '',
+                    // 出于安全考虑模板不回填 API Key；选手级 Base URL 覆盖随模板往返
                     apiKey: '',
+                    baseUrl: (p as { baseUrl?: string }).baseUrl ?? '',
                     gatewayPort: p.gatewayPort ?? 18789 + i,
                     backendType: bt === 'hermes' ? 'hermes' as const : 'openclaw' as const,
-                    backendConfig: (p as { backendConfig?: PlayerBackendConfig }).backendConfig ?? 
-                                  ((p as { backend_config?: PlayerBackendConfig }).backend_config as PlayerBackendConfig) ?? 
+                    backendConfig: (p as { backendConfig?: PlayerBackendConfig }).backendConfig ??
+                                  ((p as { backend_config?: PlayerBackendConfig }).backend_config as PlayerBackendConfig) ??
                                   {},
                   }
                 })
