@@ -274,7 +274,7 @@ def get_exports_root() -> Path:
     override = os.getenv("OPENCLAW_EXPORTS_PATH")
     if override:
         return Path(override)
-    return Path(database.DB_PATH).resolve().parent / "exports"
+    return Path(database.get_db_path()).resolve().parent / "exports"
 
 
 def get_player_code_export_path(match_id: str) -> Path:

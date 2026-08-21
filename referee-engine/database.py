@@ -6,12 +6,22 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 
-DB_PATH = os.getenv("OPENCLAW_DB_PATH", os.path.join(os.path.dirname(__file__), "openclaw.db"))
+_DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "openclaw.db")
+
+
+def get_db_path() -> str:
+    """在调用时解析数据库路径，保证运行期修改 OPENCLAW_DB_PATH 立即生效（测试 monkeypatch 依赖此行为）。"""
+    return os.environ.get("OPENCLAW_DB_PATH") or _DEFAULT_DB_PATH
+
+
+# 兼容旧引用；新代码请使用 get_db_path()
+DB_PATH = get_db_path()
 
 
 def _connect() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
