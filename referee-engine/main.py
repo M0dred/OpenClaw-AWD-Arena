@@ -560,6 +560,29 @@ class RefereeEngine:
                     force_emit=metadata_changed,
                 )
 
+    # 已知接入预设的 OpenAI 兼容端点。provider 值与前端预设 key 一致，
+    # 用户仅填 provider 不填 baseUrl 时（常见于 API 直调场景）自动补全。
+    PROVIDER_BASE_URLS: Dict[str, str] = {
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+        "moonshot": "https://api.moonshot.cn/v1",
+        "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "ollama": "http://host.docker.internal:11434/v1",
+    }
+
+    @staticmethod
+    def _normalize_llm_config(config: MatchConfig) -> MatchConfig:
+        """按 provider 预设补全缺失的 baseUrl（不覆盖用户显式填写的值）。"""
+        provider = (config.llm.provider or "").strip().lower()
+        if provider and not (config.llm.baseUrl or "").strip():
+            base_url = RefereeEngine.PROVIDER_BASE_URLS.get(provider)
+            if base_url:
+                config.llm.baseUrl = base_url
+        return config
+
     def _normalize_loop_config(self, config: MatchConfig) -> MatchConfig:
         loop_cfg = config.loop
         repeat_count = max(1, int(loop_cfg.repeatCount or 1))
@@ -1633,6 +1656,7 @@ class RefereeEngine:
         7. 防御期结束 → 攻击期
         8. 比赛时间到 → 结束
         """
+        config = self._normalize_llm_config(config)
         config = self._normalize_loop_config(config)
         loop_state = await self._ensure_loop_record(config)
         match_id = await self.create_match(config)
