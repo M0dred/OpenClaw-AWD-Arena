@@ -6,6 +6,7 @@ import ArenaPage from './pages/ArenaPage'
 import HistoryPage from './pages/HistoryPage'
 import LoopMatchesPage from './pages/LoopMatchesPage'
 import ReplayPage from './pages/ReplayPage'
+import RatingsPage from './pages/RatingsPage'
 
 const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ const App: React.FC = () => {
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/loops" element={<LoopMatchesPage />} />
         <Route path="/replay/:matchId" element={<ReplayPage />} />
+        <Route path="/ratings" element={<RatingsPage />} />
       </Routes>
     </Layout>
   )

@@ -32,6 +32,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <Link to="/loops" className={`px-3 py-2 rounded-md text-sm font-medium ${active('/loops') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>
               循环比赛
             </Link>
+            <Link to="/ratings" className={`px-3 py-2 rounded-md text-sm font-medium ${active('/ratings') ? 'bg-slate-700' : 'hover:bg-slate-700'}`}>
+              模型排名
+            </Link>
           </nav>
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-400">API Key:</span>
