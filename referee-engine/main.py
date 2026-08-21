@@ -3291,6 +3291,14 @@ template_store = TemplateStore()
 async def lifespan(app: FastAPI):
     await referee.validate_docker_api_compatibility()
 
+    # 安全自检：未配置 API Key 时给出显式警告
+    if not os.environ.get("REFEREE_API_KEY"):
+        logger.warning(
+            "REFEREE_API_KEY is not set — the referee API is running WITHOUT authentication. "
+            "This is acceptable for local-only usage, but strongly discouraged for any "
+            "network-exposed deployment. Set the REFEREE_API_KEY environment variable to enable it."
+        )
+
     # 启动时初始化数据库并加载数据
     await database.init_db()
     matches_data = await database.load_all_matches()
@@ -3429,7 +3437,15 @@ referee = RefereeEngine()
 
 app = FastAPI(title="OpenClaw AWD Referee Engine", version="2.0.0", lifespan=lifespan)
 
-_cors_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
+# CORS：默认仅允许同源访问（前端经 Nginx 反向代理，天然同源）。
+# 如需跨域直连后端，请显式设置 CORS_ORIGINS="https://your-frontend.example.com"。
+# 注意：不再默认 "*" —— 公网部署时宽松的 CORS 会放大 CSRF / 接口滥用风险。
+_raw_cors_origins = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _raw_cors_origins.split(",") if o.strip()]
+if _cors_origins:
+    logger.info(f"CORS enabled for origins: {_cors_origins}")
+else:
+    logger.info("CORS_ORIGINS not set — cross-origin requests will be rejected (same-origin only).")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,

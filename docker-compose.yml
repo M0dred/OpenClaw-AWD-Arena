@@ -4,14 +4,19 @@ services:
       context: ./referee-engine
     container_name: openclaw-referee
     volumes:
+      # 安全提示：挂载 docker.sock 等同于赋予该容器宿主机 root 权限。
+      # 请仅在受信任的环境中运行，并确保 8000 端口不直接暴露到公网。
       - /var/run/docker.sock:/var/run/docker.sock
       - referee_data:/app/data
     environment:
       - OPENCLAW_DB_PATH=/app/data/openclaw.db
       - OPENCLAW_TEMPLATES_PATH=/app/data/templates.json
       - TZ=Asia/Shanghai
-      # 允许跨域（如果有直接访问后端的需要）
-      - CORS_ORIGINS=*
+      # 接口鉴权：强烈建议设置（例如在 .env 中写入 REFEREE_API_KEY=<你的密码>）。
+      # 留空则 API 无鉴权，仅适合本地单机使用。
+      - REFEREE_API_KEY=${REFEREE_API_KEY:-}
+      # 跨域：默认仅同源（前端经 Nginx 代理）。如需跨域直连后端再显式配置。
+      # - CORS_ORIGINS=https://your-frontend.example.com
     ports:
       - "8000:8000"
     restart: unless-stopped
