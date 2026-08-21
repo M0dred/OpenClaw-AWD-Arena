@@ -151,7 +151,9 @@ class HermesBackendAdapter(AgentBackendAdapter):
         extra_env = getattr(backend_config, "extra_env", None) if backend_config is not None else None
         llm_config = getattr(config, "llm", None)
         llm_api_key = getattr(player_config, "apiKey", None) or getattr(llm_config, "apiKey", "")
-        llm_base_url = getattr(llm_config, "baseUrl", "")
+        llm_base_url = (getattr(player_config, "baseUrl", None) or "").strip() or getattr(
+            llm_config, "baseUrl", ""
+        )
         llm_model = getattr(player_config, "model", None) or getattr(llm_config, "model", "")
         llm_proxy = getattr(llm_config, "proxy", "")
 
@@ -186,9 +188,10 @@ class HermesBackendAdapter(AgentBackendAdapter):
     def create_client(self, match_config: Any, player_config: Any) -> HermesAgentClient:
         config = getattr(match_config, "config", match_config)
         llm_config = getattr(config, "llm", None)
+        player_base_url = (getattr(player_config, "baseUrl", None) or "").strip()
         return HermesAgentClient(
             llm_api_key=getattr(player_config, "apiKey", None) or getattr(llm_config, "apiKey", ""),
-            llm_base_url=getattr(llm_config, "baseUrl", ""),
+            llm_base_url=player_base_url or getattr(llm_config, "baseUrl", ""),
             llm_model=getattr(player_config, "model", None) or getattr(llm_config, "model", "claude-sonnet-4-6"),
             proxy_url=getattr(llm_config, "proxy", "http://host.docker.internal:7897"),
         )

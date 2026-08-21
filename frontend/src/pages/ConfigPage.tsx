@@ -21,6 +21,7 @@ type Player = {
   name: string
   model: string
   apiKey?: string
+  baseUrl?: string
   gatewayPort: number
   backendType: 'openclaw' | 'hermes'
   backendConfig: PlayerBackendConfig
@@ -338,6 +339,7 @@ const ConfigPage: React.FC = () => {
         name: p.name,
         model: p.model,
         apiKey: p.apiKey,
+        baseUrl: p.baseUrl?.trim() || undefined,
         gatewayPort: p.gatewayPort,
         backend_type: p.backendType,
         backend_config: {
@@ -536,7 +538,7 @@ const ConfigPage: React.FC = () => {
                   <label className="text-xs text-slate-200">模型</label>
                   <button 
                     className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
-                    onClick={() => testLlm(config.llmBaseUrl, p.apiKey || config.llmApiKey || '', config.llmProxy, p.model, false, p.id)}
+                    onClick={() => testLlm(p.baseUrl || config.llmBaseUrl, p.apiKey || config.llmApiKey || '', config.llmProxy, p.model, false, p.id)}
                     disabled={testingPlayerId === p.id}
                   >
                     {testingPlayerId === p.id ? '测试中...' : '测试可用性'}
@@ -558,7 +560,10 @@ const ConfigPage: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-200">API Key</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-xs text-slate-200">API Key</label>
+                  <span className="text-[10px] text-slate-400">留空使用全局 Key</span>
+                </div>
                 <input className="w-full bg-slate-600 rounded-md px-2 py-1" value={p.apiKey ?? ''} onChange={(e) => {
                   const k = e.target.value
                   setConfig((c) => {
@@ -567,6 +572,25 @@ const ConfigPage: React.FC = () => {
                     return { ...c, players }
                   })
                 }} />
+              </div>
+              <div>
+                <div className="flex justify-between items-center">
+                  <label className="text-xs text-slate-200">Base URL 覆盖</label>
+                  <span className="text-[10px] text-slate-400">多厂商直连对局</span>
+                </div>
+                <input
+                  className="w-full bg-slate-600 rounded-md px-2 py-1"
+                  placeholder="留空使用全局 Base URL"
+                  value={p.baseUrl ?? ''}
+                  onChange={(e) => {
+                    const b = e.target.value
+                    setConfig((c) => {
+                      const players = c.players.slice()
+                      players[idx] = { ...players[idx], baseUrl: b }
+                      return { ...c, players }
+                    })
+                  }}
+                />
               </div>
               <div>
                 <label className="text-xs text-slate-200">网关端口</label>

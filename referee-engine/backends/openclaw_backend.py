@@ -33,9 +33,10 @@ class OpenClawBackendAdapter(AgentBackendAdapter):
         )
 
     def create_client(self, match_config: Any, player_config: Any) -> AgentClient:
+        player_base_url = (getattr(player_config, "baseUrl", None) or "").strip()
         return AgentClient(
             llm_api_key=player_config.apiKey or match_config.llm.apiKey,
-            llm_base_url=match_config.llm.baseUrl,
+            llm_base_url=player_base_url or match_config.llm.baseUrl,
             llm_model=player_config.model or match_config.llm.model,
             proxy_url=match_config.llm.proxy,
         )

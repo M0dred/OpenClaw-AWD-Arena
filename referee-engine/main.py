@@ -162,6 +162,10 @@ class PlayerConfig(BaseModel):
     name: str
     model: Optional[str] = None
     apiKey: Optional[str] = None
+    # 选手级 Base URL 覆盖：留空使用全局 llm.baseUrl。
+    # 有了它，同一场比赛可以让不同选手直连不同厂商（OpenAI vs Claude 等），
+    # 不再必须借助统一路由网关。
+    baseUrl: Optional[str] = None
     gatewayPort: Optional[int] = None
     backend_type: str = "openclaw"
     backend_config: PlayerBackendConfig = Field(default_factory=PlayerBackendConfig)
