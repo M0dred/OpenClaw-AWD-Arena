@@ -54,6 +54,7 @@ from player_code_export import (
 )
 from backends import AgentBackendAdapter, backend_registry
 import database
+import elo
 
 # 配置日志
 logging.basicConfig(
@@ -2796,6 +2797,63 @@ class RefereeEngine:
         result["player_feedback"] = self._build_submission_feedback(result)
         return result
     
+    async def _update_ratings_after_match(
+        self, match: MatchState, final_leaderboard: Dict[int, Dict]
+    ) -> Optional[Dict[str, Any]]:
+        """比赛结束后按最终排名结算 ELO 等级分。
+
+        评分实体优先取模型名（player.model），缺省回退到选手名，
+        便于跨场次横向比较同一模型的表现。结算失败不影响比赛主流程。
+        """
+        try:
+            standings_rows = elo.standings_from_leaderboard(final_leaderboard)
+            if len(standings_rows) < 2:
+                return None
+
+            standings: List[Tuple[str, str, int]] = []
+            for player_id, score in standings_rows:
+                identity = self._build_player_identity_fields(match, player_id)
+                model = identity.get("model")
+                name = identity.get("name")
+                entity_key = model or name or f"player-{player_id}"
+                display_name = identity.get("display_name") or entity_key
+                standings.append((entity_key, display_name, score))
+
+            existing = await database.load_ratings()
+            current_ratings = {key: row["rating"] for key, row in existing.items()}
+            updates = elo.compute_updates(current_ratings, standings)
+            if not updates:
+                return None
+
+            now = datetime.now()
+            payload_updates = []
+            for update in updates:
+                record = {
+                    "entity_key": update.entity_key,
+                    "display_name": update.display_name,
+                    "old_rating": update.old_rating,
+                    "new_rating": update.new_rating,
+                    "delta": update.delta,
+                    "result": update.result,
+                }
+                await database.apply_rating_update(match.match_id, record, now)
+                payload_updates.append(record)
+
+            payload = {"match_id": match.match_id, "updates": payload_updates}
+            await match.add_event_and_persist("MATCH_RATINGS_UPDATED", payload)
+            await self.broadcast({"type": "MATCH_RATINGS_UPDATED", **payload})
+            logger.info(
+                f"[{match.match_id}] ELO ratings updated: "
+                + ", ".join(
+                    f"{u['entity_key']} {u['old_rating']}→{u['new_rating']}"
+                    for u in payload_updates
+                )
+            )
+            return payload
+        except Exception as exc:
+            logger.error(f"[{match.match_id}] Failed to update ELO ratings: {exc}")
+            return None
+
     async def end_match(self, match_id: str) -> Dict:
         match = self.matches.get(match_id)
         if not match:
@@ -2880,6 +2938,9 @@ class RefereeEngine:
             "leaderboard": final_leaderboard,
         })
         
+        # 结算 ELO 等级分（跨场次模型排名），失败不影响主流程
+        ratings_payload = await self._update_ratings_after_match(match, final_leaderboard)
+
         logger.info(f"[{match_id}] Match finished. Final leaderboard: {json.dumps(final_leaderboard, default=str)}")
 
         if not match.resources_destroyed:
@@ -2893,6 +2954,7 @@ class RefereeEngine:
             "leaderboard": final_leaderboard,
             "agent_logs": agent_logs,
             "player_code_export": match.player_code_export,
+            "ratings": ratings_payload,
             "events": match.events,
         }
     
@@ -3644,6 +3706,16 @@ async def get_global_leaderboard():
             }
     
     return {"match_id": None, "leaderboard": {}}
+
+
+@app.get("/api/ratings", dependencies=[Depends(verify_api_key)])
+async def get_ratings():
+    """获取跨场次的 ELO 等级分排名（按模型/选手实体聚合）。"""
+    ratings = await database.load_ratings()
+    ordered = sorted(ratings.values(), key=lambda row: row["rating"], reverse=True)
+    for rank, row in enumerate(ordered, start=1):
+        row["rank"] = rank
+    return {"ratings": ordered}
 
 
 # --- 比赛事件 ---

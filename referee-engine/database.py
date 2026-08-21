@@ -89,6 +89,21 @@ def _init_db_sync() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ratings (
+              entity_key TEXT PRIMARY KEY,
+              display_name TEXT NOT NULL,
+              rating REAL NOT NULL,
+              matches_played INTEGER NOT NULL DEFAULT 0,
+              wins INTEGER NOT NULL DEFAULT 0,
+              losses INTEGER NOT NULL DEFAULT 0,
+              draws INTEGER NOT NULL DEFAULT 0,
+              last_match_id TEXT,
+              updated_at TEXT
+            )
+            """
+        )
         existing_submission_columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(submissions)").fetchall()
@@ -489,3 +504,95 @@ async def save_submission(match_id: str, submission: Dict[str, Any]) -> None:
 
 async def load_submissions(match_id: str) -> List[Dict[str, Any]]:
     return await asyncio.to_thread(_load_submissions_sync, match_id)
+
+
+# ==================== Ratings (ELO) ====================
+
+def _load_ratings_sync() -> Dict[str, Dict[str, Any]]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT entity_key, display_name, rating, matches_played,
+                   wins, losses, draws, last_match_id, updated_at
+            FROM ratings
+            """
+        ).fetchall()
+        return {
+            row["entity_key"]: {
+                "entity_key": row["entity_key"],
+                "display_name": row["display_name"],
+                "rating": row["rating"],
+                "matches_played": row["matches_played"],
+                "wins": row["wins"],
+                "losses": row["losses"],
+                "draws": row["draws"],
+                "last_match_id": row["last_match_id"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        }
+    finally:
+        conn.close()
+
+
+def _apply_rating_update_sync(match_id: str, update: Dict[str, Any], now: datetime) -> None:
+    conn = _connect()
+    try:
+        existing = conn.execute(
+            "SELECT matches_played, wins, losses, draws FROM ratings WHERE entity_key = ?",
+            (update["entity_key"],),
+        ).fetchone()
+        if existing:
+            wins_delta = 1 if update.get("result") == "win" else 0
+            losses_delta = 1 if update.get("result") == "loss" else 0
+            draws_delta = 1 if update.get("result") == "draw" else 0
+            conn.execute(
+                """
+                UPDATE ratings
+                SET display_name = ?, rating = ?, matches_played = matches_played + 1,
+                    wins = wins + ?, losses = losses + ?, draws = draws + ?,
+                    last_match_id = ?, updated_at = ?
+                WHERE entity_key = ?
+                """,
+                (
+                    update["display_name"],
+                    update["new_rating"],
+                    wins_delta,
+                    losses_delta,
+                    draws_delta,
+                    match_id,
+                    _to_iso(now),
+                    update["entity_key"],
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO ratings (
+                    entity_key, display_name, rating, matches_played,
+                    wins, losses, draws, last_match_id, updated_at
+                ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+                """,
+                (
+                    update["entity_key"],
+                    update["display_name"],
+                    update["new_rating"],
+                    1 if update.get("result") == "win" else 0,
+                    1 if update.get("result") == "loss" else 0,
+                    1 if update.get("result") == "draw" else 0,
+                    match_id,
+                    _to_iso(now),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def load_ratings() -> Dict[str, Dict[str, Any]]:
+    return await asyncio.to_thread(_load_ratings_sync)
+
+
+async def apply_rating_update(match_id: str, update: Dict[str, Any], now: datetime) -> None:
+    await asyncio.to_thread(_apply_rating_update_sync, match_id, update, now)
