@@ -332,6 +332,8 @@ class RoundOrchestrator:
         flags["TZ"] = CONTAINER_TIMEZONE
         flags["MAINTENANCE_USERNAME"] = "defender"
         flags["MAINTENANCE_PASSWORD"] = maintenance_password
+        # seed = match_id：每场靶机的凭据/文件名随机且可按比赛复现
+        flags["CTF_SEED"] = self.match_id
         
         container = self.client.containers.run(
             self.config.get("target_image", self.DEFAULT_TARGET_IMAGE),

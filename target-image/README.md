@@ -52,6 +52,7 @@ docker exec <container_id> sqlite3 /app/arena/arena.db \
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
 | `SSH_PASSWORD` | SSH 用户 defender 的密码 | `changeme` |
+| `CTF_SEED` | 靶机内置凭据/数据库文件名的随机种子。裁判引擎默认以 match_id 注入，保证每场靶机细节不同且可按比赛复现；不设置时使用历史固定值 | 空（不随机化） |
 
 ## 文件结构
 
@@ -159,6 +160,7 @@ docker exec <container_id> sqlite3 /app/arena/arena.db \
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
 | `SSH_PASSWORD` | SSH 用户 defender 的密码 | `changeme` |
+| `CTF_SEED` | 靶机内置凭据/数据库文件名的随机种子。裁判引擎默认以 match_id 注入，保证每场靶机细节不同且可按比赛复现；不设置时使用历史固定值 | 空（不随机化） |
 
 ## 文件结构
 
@@ -266,6 +268,7 @@ docker exec <container_id> sqlite3 /app/arena/arena.db \
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
 | `SSH_PASSWORD` | SSH 用户 defender 的密码 | `changeme` |
+| `CTF_SEED` | 靶机内置凭据/数据库文件名的随机种子。裁判引擎默认以 match_id 注入，保证每场靶机细节不同且可按比赛复现；不设置时使用历史固定值 | 空（不随机化） |
 
 ## 文件结构
 

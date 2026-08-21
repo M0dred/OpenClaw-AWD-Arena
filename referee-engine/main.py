@@ -1799,6 +1799,8 @@ class RefereeEngine:
             flags["TZ"] = CONTAINER_TIMEZONE
             flags["MAINTENANCE_USERNAME"] = "defender"
             flags["MAINTENANCE_PASSWORD"] = maintenance_password
+            # seed = match_id：每场靶机的凭据/文件名随机且可按比赛复现
+            flags["CTF_SEED"] = match.match_id
             flags["MAINTENANCE_AUTHORIZED_KEY"] = ssh_key_material.public_key.rstrip("\n")
             
             target_image = match.config.target_image or "openclaw/ctf-target:v1"
