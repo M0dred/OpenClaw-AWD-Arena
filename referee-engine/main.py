@@ -216,6 +216,13 @@ class LLMTestRequest(BaseModel):
     proxy: Optional[str] = None
 
 
+class LLMListModelsRequest(BaseModel):
+    """获取 OpenAI 兼容网关可用模型列表的请求"""
+    baseUrl: str
+    apiKey: Optional[str] = ""
+    proxy: Optional[str] = None
+
+
 class TopPlayerEntry(BaseModel):
     player_id: int
     total_score: int
@@ -3601,6 +3608,16 @@ def _normalize_chat_completions_url(base_url: str) -> str:
     return f"{url}/chat/completions"
 
 
+def _list_models_url(base_url: str) -> str:
+    """将任意 OpenAI 兼容 baseUrl 推导为 GET /models 端点。"""
+    url = (base_url or "").strip().rstrip("/")
+    for suffix in ("/chat/completions", "/completions"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+            break
+    return f"{url}/models"
+
+
 # ==================== API Auth ====================
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -3924,6 +3941,60 @@ async def import_template(file: UploadFile = File(...)):
 
 
 # --- LLM 调试 ---
+
+@app.post("/api/list-models", dependencies=[Depends(verify_api_key)])
+async def list_llm_models(req: LLMListModelsRequest):
+    """代理 OpenAI 兼容网关的 GET /models，避免前端直接暴露 CORS / Key。"""
+    import aiohttp
+    import time
+
+    request_url = _list_models_url(req.baseUrl)
+    headers = {"Content-Type": "application/json"}
+    if req.apiKey:
+        headers["Authorization"] = f"Bearer {req.apiKey}"
+
+    proxy = req.proxy if req.proxy else None
+    start = time.time()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                request_url,
+                headers=headers,
+                proxy=proxy,
+                timeout=15,
+            ) as response:
+                text = await response.text()
+                latency = time.time() - start
+                if response.status != 200:
+                    return {
+                        "success": False,
+                        "error": f"HTTP {response.status}: {text[:500]}",
+                    }
+                try:
+                    payload = json.loads(text)
+                except json.JSONDecodeError:
+                    return {
+                        "success": False,
+                        "error": f"非 JSON 响应：{text[:200]}",
+                    }
+                # OpenAI 兼容网关的 models 端点通常返回 {"object":"list","data":[{"id":..., "object":"model"}, ...]}
+                data = payload.get("data") if isinstance(payload, dict) else None
+                models: List[str] = []
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and isinstance(item.get("id"), str):
+                            models.append(item["id"])
+                        elif isinstance(item, str):
+                            models.append(item)
+                return {
+                    "success": True,
+                    "models": models,
+                    "raw": payload,
+                    "latency": latency,
+                }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
 
 @app.post("/api/test-llm", dependencies=[Depends(verify_api_key)])
 async def test_llm_connection(req: LLMTestRequest):

@@ -159,6 +159,8 @@ const ConfigPage: React.FC = () => {
   
   const [testingGlobalLlm, setTestingGlobalLlm] = useState(false)
   const [testingPlayerId, setTestingPlayerId] = useState<number | null>(null)
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [dynamicModels, setDynamicModels] = useState<Record<string, string[]>>({})
 
   const [config, setConfig] = useState<ConfigState>({
     matchName: 'OpenClaw AWD Match',
@@ -306,6 +308,35 @@ const ConfigPage: React.FC = () => {
     } finally {
       if (isGlobal) setTestingGlobalLlm(false);
       else if (playerId) setTestingPlayerId(null);
+    }
+  }
+
+  const fetchModels = async (baseUrl: string, apiKey: string) => {
+    if (!baseUrl) {
+      alert('请先填写 Base URL')
+      return
+    }
+    setFetchingModels(true)
+    try {
+      const res = await fetchApi(`${API_BASE}/api/list-models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl, apiKey }),
+      })
+      const data = await res.json()
+      if (data.success && Array.isArray(data.models)) {
+        // 以 baseUrl 为键缓存（同一网关重复拉取不必再请求）
+        setDynamicModels((m) => ({ ...m, [baseUrl]: data.models }))
+        if (data.models.length === 0) {
+          alert('网关返回成功但模型列表为空')
+        }
+      } else {
+        alert(`获取模型列表失败: ${data.error ?? '未知错误'}`)
+      }
+    } catch (e: any) {
+      alert(`获取异常: ${e.message}`)
+    } finally {
+      setFetchingModels(false)
     }
   }
 
@@ -495,7 +526,17 @@ const ConfigPage: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm text-slate-300">Base URL</label>
-              <input className="w-full bg-slate-700 rounded-md px-2 py-1" placeholder="https://your-openai-compatible-gateway/v1" value={config.llmBaseUrl} onChange={(e) => update('llmBaseUrl', e.target.value)} />
+              <div className="flex gap-2">
+                <input className="flex-1 bg-slate-700 rounded-md px-2 py-1" placeholder="https://your-openai-compatible-gateway/v1" value={config.llmBaseUrl} onChange={(e) => update('llmBaseUrl', e.target.value)} />
+                <button
+                  className="px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded-md text-sm text-slate-100 disabled:opacity-50"
+                  disabled={fetchingModels}
+                  onClick={() => fetchModels(config.llmBaseUrl, config.llmApiKey ?? '')}
+                  title="从该网关的 /models 端点拉取实时可用模型"
+                >
+                  {fetchingModels ? '拉取中…' : '获取模型'}
+                </button>
+              </div>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm text-slate-300">API Key</label>
@@ -521,9 +562,17 @@ const ConfigPage: React.FC = () => {
       <section className="bg-slate-800/60 border border-slate-700 rounded-md p-4">
         <h3 className="text-lg font-semibold mb-2">选手配置</h3>
         <datalist id="llm-model-suggestions">
-          {(currentPreset.models.length ? currentPreset.models : LLM_PRESETS.flatMap((p) => p.models)).map((m) => (
-            <option key={m} value={m} />
-          ))}
+          {(() => {
+            const fromDynamic = Object.values(dynamicModels).flat()
+            const sources = [
+              ...(currentPreset.models.length ? currentPreset.models : []),
+              ...fromDynamic,
+              ...LLM_PRESETS.flatMap((p) => p.models),
+            ]
+            return Array.from(new Set(sources)).map((m) => (
+              <option key={m} value={m} />
+            ))
+          })()}
         </datalist>
         <div className="flex items-center gap-2 mb-3 text-sm text-slate-300">
           <span>选手数:</span>
