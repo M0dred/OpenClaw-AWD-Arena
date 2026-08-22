@@ -11,7 +11,7 @@ services:
     environment:
       - OPENCLAW_DB_PATH=/app/data/openclaw.db
       - OPENCLAW_TEMPLATES_PATH=/app/data/templates.json
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
       # 接口鉴权：强烈建议设置（例如在 .env 中写入 REFEREE_API_KEY=<你的密码>）。
       # 留空则 API 无鉴权，仅适合本地单机使用。
       - REFEREE_API_KEY=${REFEREE_API_KEY:-}
@@ -28,7 +28,7 @@ services:
       context: ./frontend
     container_name: openclaw-frontend
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-UTC}
     ports:
       - "80:80"
     depends_on:

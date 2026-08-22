@@ -11,7 +11,8 @@ RUN unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-ENV TZ=Asia/Shanghai
+ARG TZ=UTC
+ENV TZ=${TZ}
 
 # 安装 docker cli
 RUN unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; \

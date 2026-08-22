@@ -1,3 +1,4 @@
+import os
 from typing import Any, Optional
 
 from agent_client import AgentClient
@@ -5,7 +6,7 @@ from agent_client import AgentClient
 from .base import AgentBackendAdapter, BackendContainerSpec, BackendTargetSSHSpec, StreamCallback
 
 
-CONTAINER_TIMEZONE = "Asia/Shanghai"
+CONTAINER_TIMEZONE = os.environ.get("OPENCLAW_TZ", "UTC")
 
 
 class OpenClawBackendAdapter(AgentBackendAdapter):

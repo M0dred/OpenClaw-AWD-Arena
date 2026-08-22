@@ -64,7 +64,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("referee")
 
-CONTAINER_TIMEZONE = "Asia/Shanghai"
+CONTAINER_TIMEZONE = os.environ.get("OPENCLAW_TZ", "UTC")
 
 # 编排器（可选，如果独立进程则不需要）
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -149,7 +149,7 @@ class LLMConfig(BaseModel):
     baseUrl: str = ""
     apiKey: str = ""
     model: str = "claude-sonnet-4-6"
-    proxy: str = "http://host.docker.internal:7897"
+    proxy: str = ""  # 留空表示直连；通过 OPENCLAW_PROXY 环境变量可设置全局默认值（适配非中国大陆用户）
 
 
 class PlayerBackendConfig(BaseModel):
@@ -297,6 +297,10 @@ class PlayerStatusResponse(BaseModel):
 
 CONTAINER_RESTART_POLICY = cast(Any, {"Name": "always"})
 
+# Docker Desktop 自带 host.docker.internal；Linux 上需要显式映射到 host-gateway
+# 才能让容器解析到宿主 IP。Docker 20.10+ 通用。
+HOST_GATEWAY_EXTRA_HOSTS = {"host.docker.internal": "host-gateway"}
+
 
 # ==================== Match State ====================
 
@@ -324,7 +328,7 @@ class MatchState:
             llm_api_key=config.llm.apiKey,
             llm_base_url=config.llm.baseUrl,
             llm_model=config.players[0].model or config.llm.model if config.players else config.llm.model,
-            proxy_url=config.llm.proxy,
+            proxy_url=config.llm.proxy or os.environ.get("OPENCLAW_PROXY", ""),
         )
         self.player_clients: Dict[int, Any] = {}
         self.player_backends: Dict[int, AgentBackendAdapter] = {}
@@ -1853,6 +1857,7 @@ class RefereeEngine:
                 mem_limit="1g",
                 nano_cpus=1_000_000_000,  # 1 CPU core
                 restart_policy=CONTAINER_RESTART_POLICY,
+                extra_hosts=HOST_GATEWAY_EXTRA_HOSTS,
                 labels={
                     "awd.match_id": match.match_id,
                     "awd.player_id": str(pid),
@@ -1871,6 +1876,7 @@ class RefereeEngine:
                 mem_limit="2g",
                 nano_cpus=2_000_000_000,  # 2 CPU cores
                 restart_policy=CONTAINER_RESTART_POLICY,
+                extra_hosts=HOST_GATEWAY_EXTRA_HOSTS,
                 entrypoint=agent_spec.entrypoint,
                 command=agent_spec.command,
                 volumes=agent_spec.volumes or None,

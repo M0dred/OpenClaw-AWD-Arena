@@ -27,6 +27,10 @@ from docker.types import IPAMConfig, IPAMPool
 
 CONTAINER_RESTART_POLICY = cast(Any, {"Name": "always"})
 
+# 让容器解析 host.docker.internal（Linux 上需要 host-gateway 映射；
+# Docker Desktop 自带）。Docker 20.10+ 通用。
+HOST_GATEWAY_EXTRA_HOSTS = {"host.docker.internal": "host-gateway"}
+
 
 def _require_container_id(container_id: Optional[str], container_name: str) -> str:
     if container_id is None:
@@ -36,7 +40,7 @@ def _require_container_id(container_id: Optional[str], container_name: str) -> s
 
 logger = logging.getLogger(__name__)
 
-CONTAINER_TIMEZONE = "Asia/Shanghai"
+CONTAINER_TIMEZONE = os.environ.get("OPENCLAW_TZ", "UTC")
 
 
 @dataclass
@@ -100,7 +104,7 @@ class RoundOrchestrator:
         
         players = self.config.get("players", [])
         llm_config = self.config.get("llm", {})
-        proxy_url = llm_config.get("proxy", "http://host.docker.internal:7897")
+        proxy_url = llm_config.get("proxy", "") or os.environ.get("OPENCLAW_PROXY", "")
         
         for player in players:
             pid = player["id"]
@@ -263,7 +267,7 @@ class RoundOrchestrator:
         
         players = self.config.get("players", [])
         llm_config = self.config.get("llm", {})
-        proxy_url = llm_config.get("proxy", "http://host.docker.internal:7897")
+        proxy_url = llm_config.get("proxy", "") or os.environ.get("OPENCLAW_PROXY", "")
         
         for player in players:
             pid = player["id"]
@@ -344,6 +348,7 @@ class RoundOrchestrator:
             detach=True,
             mem_limit="1g",
             restart_policy=CONTAINER_RESTART_POLICY,
+            extra_hosts=HOST_GATEWAY_EXTRA_HOSTS,
             labels={
                 "awd.match_id": self.match_id,
                 "awd.player_id": str(player_id),
@@ -390,6 +395,7 @@ class RoundOrchestrator:
             detach=True,
             mem_limit="2g",
             restart_policy=CONTAINER_RESTART_POLICY,
+            extra_hosts=HOST_GATEWAY_EXTRA_HOSTS,
             labels={
                 "awd.match_id": self.match_id,
                 "awd.player_id": str(player_id),

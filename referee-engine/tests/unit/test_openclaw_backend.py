@@ -51,7 +51,7 @@ def test_openclaw_backend_container_spec_preserves_legacy_defaults():
     assert spec.environment["OPENAI_API_KEY"] == "global-key"
     assert spec.environment["HTTPS_PROXY"] == "http://host.docker.internal:7897"
     assert spec.environment["HTTP_PROXY"] == "http://host.docker.internal:7897"
-    assert spec.environment["TZ"] == "Asia/Shanghai"
+    assert spec.environment["TZ"] == "UTC"
 
 
 def test_openclaw_backend_container_spec_allows_player_overrides():

@@ -1,6 +1,7 @@
 FROM openclaw/ctf-target:test
 
-ENV TZ=Asia/Shanghai
+ARG TZ=UTC
+ENV TZ=${TZ}
 
 # Copy custom web server with hidden debug endpoint
 COPY awd_web_server.py /app/server.py

@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 import re
@@ -13,7 +14,7 @@ from .base import AgentBackendAdapter, BackendContainerSpec, BackendTargetSSHSpe
 
 logger = logging.getLogger(__name__)
 
-CONTAINER_TIMEZONE = "Asia/Shanghai"
+CONTAINER_TIMEZONE = os.environ.get("OPENCLAW_TZ", "UTC")
 DEFAULT_HERMES_IMAGE = "openclaw/hermes-agent:latest"
 HERMES_RUNTIME_VOLUME_PREFIX = "openclaw_hermes_runtime"
 HERMES_HOME = "/opt/data"
@@ -193,7 +194,7 @@ class HermesBackendAdapter(AgentBackendAdapter):
             llm_api_key=getattr(player_config, "apiKey", None) or getattr(llm_config, "apiKey", ""),
             llm_base_url=player_base_url or getattr(llm_config, "baseUrl", ""),
             llm_model=getattr(player_config, "model", None) or getattr(llm_config, "model", "claude-sonnet-4-6"),
-            proxy_url=getattr(llm_config, "proxy", "http://host.docker.internal:7897"),
+            proxy_url=(getattr(llm_config, "proxy", "") or os.environ.get("OPENCLAW_PROXY", "")),
         )
 
     def resolve_target_ssh_spec(self, match_config: Any, player_config: Any) -> BackendTargetSSHSpec:

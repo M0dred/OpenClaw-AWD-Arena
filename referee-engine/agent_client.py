@@ -128,7 +128,7 @@ class AgentClient:
         llm_api_key: str,
         llm_base_url: str = "",
         llm_model: str = "claude-sonnet-4-6",
-        proxy_url: str = "http://host.docker.internal:7897",
+        proxy_url: str = "",  # 留空表示直连；OPENCLAW_PROXY 环境变量可覆盖默认
         agent_timeout: int = 600,
         provider_name: str = "routerss",
     ):

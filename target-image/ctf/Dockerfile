@@ -1,10 +1,18 @@
 FROM node:20-alpine
 
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+# 使用 Alpine 官方默认仓库，保证全球任何地区都能构建。
+# 中国大陆用户如需加速，可在构建前手动替换仓库，例如：
+#   docker build --build-arg APK_MIRROR=mirrors.aliyun.com ...
+# 或在本地配置 Docker 镜像加速器，不要写死在 Dockerfile 中。
+ARG APK_MIRROR=""
+RUN if [ -n "$APK_MIRROR" ]; then \
+        sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories; \
+    fi && \
     apk add --no-cache bash curl iputils sqlite python3 tzdata \
     supervisor openssh-server shadow busybox-suid
 
-ENV TZ=Asia/Shanghai
+ARG TZ=UTC
+ENV TZ=${TZ}
 ENV MAINTENANCE_USERNAME=defender
 
 RUN addgroup -S webops && \
