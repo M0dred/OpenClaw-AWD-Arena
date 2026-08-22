@@ -2895,6 +2895,40 @@ class RefereeEngine:
             logger.error(f"[{match.match_id}] Failed to update ELO ratings: {exc}")
             return None
 
+    async def _compute_and_store_analytics(self, match: MatchState) -> Optional[Dict[str, Any]]:
+        """赛后行为分析：从已有事件和提交记录推导分析指标。"""
+        try:
+            import action_tracker
+            identity_map = {}
+            for pid in match.players:
+                identity_map[pid] = self._build_player_identity_fields(match, pid)
+
+            analytics = action_tracker.compute_match_analytics(
+                match_id=match.match_id,
+                started_at=match.started_at,
+                attack_started_at=match.attack_started_at,
+                finished_at=match.finished_at,
+                players_state=match.players,
+                submissions=match.persisted_submissions,
+                identity_map=identity_map,
+            )
+            payload = analytics.to_dict()
+            await match.add_event_and_persist("MATCH_ANALYTICS", payload)
+            await self.broadcast({
+                "type": "MATCH_ANALYTICS",
+                "match_id": match.match_id,
+                "analytics": payload,
+            })
+            logger.info(
+                f"[{match.match_id}] Analytics computed: "
+                f"{payload['summary']['players_with_exploit']} players exploited, "
+                f"fastest={payload['summary']['fastest_exploit_seconds']}s"
+            )
+            return payload
+        except Exception as exc:
+            logger.error(f"[{match.match_id}] Failed to compute analytics: {exc}")
+            return None
+
     async def end_match(self, match_id: str) -> Dict:
         match = self.matches.get(match_id)
         if not match:
@@ -2982,13 +3016,16 @@ class RefereeEngine:
         # 结算 ELO 等级分（跨场次模型排名），失败不影响主流程
         ratings_payload = await self._update_ratings_after_match(match, final_leaderboard)
 
+        # 赛后行为分析（从已有数据推导，不侵入 Agent 容器）
+        analytics_payload = await self._compute_and_store_analytics(match)
+
         logger.info(f"[{match_id}] Match finished. Final leaderboard: {json.dumps(final_leaderboard, default=str)}")
 
         if not match.resources_destroyed:
             if match._destroy_task is None or match._destroy_task.done():
                 match._destroy_task = asyncio.create_task(self.destroy_match(match_id))
             await match._destroy_task
-        
+
         return {
             "match_id": match_id,
             "status": "finished",
@@ -2996,6 +3033,7 @@ class RefereeEngine:
             "agent_logs": agent_logs,
             "player_code_export": match.player_code_export,
             "ratings": ratings_payload,
+            "analytics": analytics_payload,
             "events": match.events,
         }
     
@@ -3821,6 +3859,33 @@ async def get_ratings():
     for rank, row in enumerate(ordered, start=1):
         row["rank"] = rank
     return {"ratings": ordered}
+
+
+@app.get("/api/matches/{match_id}/analytics", dependencies=[Depends(verify_api_key)])
+async def get_match_analytics(match_id: str):
+    """获取比赛赛后行为分析（首次利用耗时、攻击路径覆盖率、提交效率等）。"""
+    # 优先从事件中取已存储的分析
+    match = referee.matches.get(match_id)
+    if match:
+        for event in reversed(match.events):
+            if event.get("type") == "MATCH_ANALYTICS":
+                return {"analytics": event.get("data", event)}
+        # 比赛还在进行中，实时计算
+        import action_tracker
+        identity_map = {}
+        for pid in match.players:
+            identity_map[pid] = referee._build_player_identity_fields(match, pid)
+        analytics = action_tracker.compute_match_analytics(
+            match_id=match.match_id,
+            started_at=match.started_at,
+            attack_started_at=match.attack_started_at,
+            finished_at=match.finished_at or datetime.now(),
+            players_state=match.players,
+            submissions=match.persisted_submissions,
+            identity_map=identity_map,
+        )
+        return {"analytics": analytics.to_dict(), "live": True}
+    raise HTTPException(status_code=404, detail="Match not found")
 
 
 # --- 比赛事件 ---
