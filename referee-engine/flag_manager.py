@@ -23,6 +23,8 @@ FLAG_SLOT_SEQUENCE: List[Tuple[str, int]] = [
     ("database_flag", 2),
     ("etc_flag", 3),
     ("credentials_flag", 4),
+    ("system_config_flag", 5),
+    ("profile_recovery_flag", 6),
 ]
 
 
@@ -106,13 +108,15 @@ class FlagManager:
         players: Dict[int, PlayerState],
     ) -> Dict[int, str]:
         new_flags = {}
-        
+
         for player_id, player in players.items():
             flag1 = f"FLAG{{{secrets.token_hex(16)}}}"
             flag2 = f"FLAG{{{secrets.token_hex(16)}}}"
             flag3 = f"FLAG{{{secrets.token_hex(16)}}}"
             flag4 = f"FLAG{{{secrets.token_hex(16)}}}"
-            
+            flag5 = f"FLAG{{{secrets.token_hex(16)}}}"
+            flag6 = f"FLAG{{{secrets.token_hex(16)}}}"
+
             results = await asyncio.gather(
                 self._inject_db_flag(player.target_container, flag2),
                 self._inject_file_flag(
@@ -123,8 +127,10 @@ class FlagManager:
                 ),
                 self._inject_file_flag(player.target_container, "/etc/flag3.txt", flag3, mode="0600"),
                 self._inject_file_flag(player.target_container, "/opt/.credentials/flag4.txt", flag4, mode="0600"),
+                self._inject_pickle_flag(player.target_container, flag5),
+                self._inject_profile_flag(player.target_container, flag6),
             )
-            db_ok, f1_ok, f3_ok, f4_ok = results
+            db_ok, f1_ok, f3_ok, f4_ok, f5_ok, f6_ok = results
             
             if db_ok:
                 if player_id in self.active_flags:
@@ -149,6 +155,10 @@ class FlagManager:
                     self._register_flag(player_id, "etc_flag", 3, flag3, flag_set)
                 if f4_ok:
                     self._register_flag(player_id, "credentials_flag", 4, flag4, flag_set)
+                if f5_ok:
+                    self._register_flag(player_id, "system_config_flag", 5, flag5, flag_set)
+                if f6_ok:
+                    self._register_flag(player_id, "profile_recovery_flag", 6, flag6, flag_set)
 
                 self.active_flags[player_id] = flag_set
                 player.current_flag = flag2
@@ -159,7 +169,9 @@ class FlagManager:
                     f"FLAG1={'ok' if f1_ok else 'FAIL'} "
                     f"FLAG2={'ok' if db_ok else 'FAIL'} "
                     f"FLAG3={'ok' if f3_ok else 'FAIL'} "
-                    f"FLAG4={'ok' if f4_ok else 'FAIL'}"
+                    f"FLAG4={'ok' if f4_ok else 'FAIL'} "
+                    f"FLAG5={'ok' if f5_ok else 'FAIL'} "
+                    f"FLAG6={'ok' if f6_ok else 'FAIL'}"
                 )
             else:
                 logger.error(f"[Player {player_id}] Primary flag (FLAG2/DB) injection failed!")
@@ -276,7 +288,67 @@ class FlagManager:
         except Exception as e:
             logger.error(f"[{container_name}] File inject error ({path}): {e}")
             return False
-    
+
+    async def _inject_pickle_flag(self, container_name: str, flag: str) -> bool:
+        """将 Flag5 写入序列化的系统配置 pickle 文件。"""
+        import pickle
+        config = {
+            "version": "3.2.1",
+            "environment": "production",
+            "features": {"preview": True, "reports": True, "debug": False},
+            "review_token": flag,
+            "maintenance_window": "02:00-04:00 UTC",
+        }
+        pickle_b64 = base64.b64encode(pickle.dumps(config)).decode("ascii")
+        safe_container = shlex.quote(container_name)
+        cmd = (
+            f"docker exec {safe_container} sh -c "
+            f"{shlex.quote(f'echo {shlex.quote(pickle_b64)} | base64 -d > /app/data/system_config.pkl && chmod 0600 /app/data/system_config.pkl')}"
+        )
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode != 0:
+                logger.error(f"[{container_name}] Pickle inject failed: {stderr.decode()}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"[{container_name}] Pickle inject error: {e}")
+            return False
+
+    async def _inject_profile_flag(self, container_name: str, flag: str) -> bool:
+        """将 Flag6 写入 sysadmin 的 profile JSON（IDOR 漏洞面）。"""
+        profile = {
+            "user_id": 99,
+            "username": "sysadmin",
+            "role": "superadmin",
+            "department": "Infrastructure",
+            "clearance": "level-10",
+            "notes": "Emergency recovery account.",
+            "recovery_token": flag,
+        }
+        profile_json = json.dumps(profile, indent=2)
+        profile_b64 = base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
+        safe_container = shlex.quote(container_name)
+        cmd = (
+            f"docker exec {safe_container} sh -c "
+            f"{shlex.quote(f'mkdir -p /app/data/profiles && echo {shlex.quote(profile_b64)} | base64 -d > /app/data/profiles/99.json && chmod 0644 /app/data/profiles/99.json')}"
+        )
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode != 0:
+                logger.error(f"[{container_name}] Profile inject failed: {stderr.decode()}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"[{container_name}] Profile inject error: {e}")
+            return False
+
     def validate_submission(
         self,
         attacker_id: int,

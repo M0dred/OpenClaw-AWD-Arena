@@ -53,6 +53,8 @@ curl -s -H "X-Player-Token: {PLAYER_READ_TOKEN}" {PLAYER_STATUS_URL}
 - **Flag2 倾向**：登录或后台相关的 SQL 注入 / 数据层提取
 - **Flag3 倾向**：通过 `/preview` 一类功能触发 SSRF，再访问仅内部可见的预览接口
 - **Flag4 倾向**：高权限文件或维护面 / 本地提权链，不应从公开 Web 面直接顺手读到
+- **Flag5 倾向**：内部 API 的反序列化接口（pickle），系统配置中藏有敏感数据
+- **Flag6 倾向**：用户 profile 接口存在不安全的直接对象引用（IDOR），高权限用户的 profile 包含恢复令牌
 
 如果一个利用链让你一次读到多个槽位，优先怀疑目标刚修补不完整；标准第一阶段设计下，不应再默认“一洞全收”。
 

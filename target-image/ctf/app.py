@@ -3,9 +3,12 @@
 OpenClaw AWD CTF Target - Vulnerable Web Application
 Stage 1 hardening keeps four flags in the same container but separates
 their intended acquisition paths more clearly.
+Stage 2 adds two more vulnerability classes: deserialization and IDOR.
 """
+import base64
 import json
 import os
+import pickle
 import random
 import re
 import secrets
@@ -24,6 +27,8 @@ FLAG_1 = os.environ.get("FLAG_1", "FLAG{1_placeholder}")
 FLAG_2 = os.environ.get("FLAG_2", "FLAG{2_placeholder}")
 FLAG_3 = os.environ.get("FLAG_3", "FLAG{3_placeholder}")
 FLAG_4 = os.environ.get("FLAG_4", "FLAG{4_placeholder}")
+FLAG_5 = os.environ.get("FLAG_5", "FLAG{5_placeholder}")
+FLAG_6 = os.environ.get("FLAG_6", "FLAG{6_placeholder}")
 
 
 def _seeded_credentials() -> dict:
@@ -67,6 +72,8 @@ STATIC_DIR = "/app/static"
 FLAG_3_PATH = "/etc/flag3.txt"
 FLAG_4_PATH = "/opt/.credentials/flag4.txt"
 REPORTS_DIR = "/app/reports"
+SYSTEM_CONFIG_PATH = "/app/data/system_config.pkl"
+PROFILES_DIR = "/app/data/profiles"
 
 SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 ALLOWED_DOCUMENTS = {
@@ -76,6 +83,68 @@ ALLOWED_DOCUMENTS = {
 }
 
 authenticated_sessions = {}
+
+
+def ensure_system_config():
+    """写入序列化的系统配置对象（Flag5 载体）。
+
+    这是一个真实的 pickle 反序列化漏洞面：
+    系统配置通过 pickle 存储，deserialize 端点会 unpickle 任意输入。
+    """
+    config = {
+        "version": "3.2.1",
+        "environment": "production",
+        "features": {"preview": True, "reports": True, "debug": False},
+        "review_token": FLAG_5,
+        "maintenance_window": "02:00-04:00 UTC",
+    }
+    os.makedirs(os.path.dirname(SYSTEM_CONFIG_PATH), exist_ok=True)
+    with open(SYSTEM_CONFIG_PATH, "wb") as f:
+        pickle.dump(config, f)
+    os.chmod(SYSTEM_CONFIG_PATH, 0o600)
+
+
+def ensure_profiles():
+    """初始化用户 profile 目录（Flag6 载体，IDOR 漏洞面）。
+
+    每个用户有一个 JSON profile 文件。/api/users/{id}/profile
+    端点不做授权检查——任何已登录用户（甚至未登录）都能读取
+    任意用户的 profile，包括 sysadmin 的敏感信息。
+    """
+    profiles = {
+        "1": {
+            "user_id": 1,
+            "username": "admin",
+            "role": "admin",
+            "department": "IT",
+            "clearance": "level-5",
+            "notes": "System administrator account. Rotation schedule attached.",
+        },
+        "2": {
+            "user_id": 2,
+            "username": "guest",
+            "role": "user",
+            "department": "General",
+            "clearance": "level-1",
+            "notes": "Temporary access account.",
+        },
+        "99": {
+            "user_id": 99,
+            "username": "sysadmin",
+            "role": "superadmin",
+            "department": "Infrastructure",
+            "clearance": "level-10",
+            "notes": "Emergency recovery account.",
+            "recovery_token": FLAG_6,
+        },
+    }
+    os.makedirs(PROFILES_DIR, exist_ok=True)
+    for uid, profile in profiles.items():
+        path = os.path.join(PROFILES_DIR, f"{uid}.json")
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(profile, f, indent=2)
+            os.chmod(path, 0o644)
 
 
 def init_db():
@@ -574,6 +643,47 @@ class CTFHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"Command failed: {e}")
 
+        # VULNERABILITY 4: /api/internal/deserialize - Pickle deserialization (internal only)
+        # 反序列化漏洞：unpickle 任意输入，可读取系统配置中的敏感数据
+        elif path == "/api/internal/deserialize":
+            if not self._is_internal_request():
+                self._json(403, {"error": "internal API only"})
+                return
+
+            action = params.get("action", [""])[0]
+            if action == "load-config":
+                # 加载序列化的系统配置
+                try:
+                    with open(SYSTEM_CONFIG_PATH, "rb") as f:
+                        config = pickle.load(f)
+                    self._json(200, {"status": "loaded", "config": config})
+                except Exception as e:
+                    self._json(500, {"error": f"Config load failed: {e}"})
+                return
+
+            data_b64 = params.get("data", [""])[0]
+            if not data_b64:
+                self._json(400, {"error": "missing data parameter (base64-encoded pickle)"})
+                return
+            try:
+                raw = base64.b64decode(data_b64)
+                obj = pickle.loads(raw)
+                self._json(200, {"status": "deserialized", "type": type(obj).__name__, "repr": repr(obj)[:2000]})
+            except Exception as e:
+                self._json(400, {"error": f"Deserialization failed: {e}"})
+
+        # VULNERABILITY 5: /api/users/{id}/profile - IDOR (no authorization check)
+        # 不安全的直接对象引用：不验证请求者是否有权查看该用户的 profile
+        elif path.startswith("/api/users/") and path.endswith("/profile"):
+            user_id = path.replace("/api/users/", "").replace("/profile", "")
+            profile_path = os.path.join(PROFILES_DIR, f"{user_id}.json")
+            if os.path.isfile(profile_path):
+                with open(profile_path, "r", encoding="utf-8") as f:
+                    profile = json.load(f)
+                self._json(200, {"profile": profile})
+            else:
+                self._json(404, {"error": f"User {user_id} not found"})
+
         elif path == "/health":
             self._json(200, {"status": "ok"})
 
@@ -671,6 +781,8 @@ if __name__ == "__main__":
     init_db()
     ensure_static_files()
     ensure_report_templates()
+    ensure_system_config()
+    ensure_profiles()
     print("[CTF] Server starting on 0.0.0.0:3000 (managed by supervisord)", flush=True)
 
     server = ThreadingHTTPServer(("0.0.0.0", 3000), CTFHandler)
