@@ -2,6 +2,41 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { API_BASE, fetchApi } from '../api'
 
+type AnalyticsPlayer = {
+  player_id: number
+  display_name: string
+  model: string | null
+  first_exploit_at: string | null
+  time_to_first_exploit_seconds: number | null
+  flags_captured: number
+  attack_score: number
+  attack_slots_captured: string[]
+  flags_lost: number
+  defense_score: number
+  sla_down_minutes: number
+  total_score: number
+  submissions_made: number
+  successful_submissions: number
+  submission_success_rate: number
+  score_per_submission: number
+}
+
+type AnalyticsData = {
+  match_id: string
+  duration_seconds: number
+  defense_duration_seconds: number
+  attack_duration_seconds: number
+  players: AnalyticsPlayer[]
+  summary: {
+    total_submissions: number
+    total_successful: number
+    fastest_exploit_seconds: number | null
+    slowest_exploit_seconds: number | null
+    players_with_exploit: number
+    players_without_exploit: number
+  }
+}
+
 type MatchRow = {
   match_id: string
   id?: string
@@ -27,6 +62,9 @@ const HistoryPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('All')
   const [endingMatchId, setEndingMatchId] = useState<string | null>(null)
   const [exportingCodeMatchId, setExportingCodeMatchId] = useState<string | null>(null)
+  const [analyticsMatchId, setAnalyticsMatchId] = useState<string | null>(null)
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const highlightedMatchId = searchParams.get('matchId')
@@ -108,6 +146,32 @@ const HistoryPage: React.FC = () => {
     } finally {
       setEndingMatchId(null)
     }
+  }
+
+  const handleShowAnalytics = async (e: React.MouseEvent, matchId: string) => {
+    e.stopPropagation()
+    setAnalyticsMatchId(matchId)
+    setAnalyticsLoading(true)
+    setAnalyticsData(null)
+    try {
+      const resp = await fetchApi(`${API_BASE}/api/matches/${matchId}/analytics`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      setAnalyticsData(data.analytics ?? null)
+    } catch (err) {
+      console.error('Analytics fetch failed:', err)
+      alert('获取分析数据失败')
+      setAnalyticsMatchId(null)
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }
+
+  const formatSeconds = (s: number | null): string => {
+    if (s === null) return '—'
+    if (s < 60) return `${s.toFixed(0)}s`
+    if (s < 3600) return `${(s / 60).toFixed(1)}min`
+    return `${(s / 3600).toFixed(1)}h`
   }
 
   const handlePlayerCodeExport = async (e: React.MouseEvent, matchId: string) => {
@@ -219,6 +283,14 @@ const HistoryPage: React.FC = () => {
                   </button>
                   {m.status === 'finished' && (
                     <button
+                      onClick={(e) => handleShowAnalytics(e, rowId)}
+                      className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-xs transition-colors"
+                    >
+                      分析
+                    </button>
+                  )}
+                  {m.status === 'finished' && (
+                    <button
                       onClick={(e) => handlePlayerCodeExport(e, rowId)}
                       disabled={exportingCodeMatchId === rowId}
                       className="px-3 py-1 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white rounded text-xs transition-colors"
@@ -254,6 +326,101 @@ const HistoryPage: React.FC = () => {
       </table>
       {filteredMatches.length === 0 && (
         <div className="text-center text-slate-400 py-8">暂无比赛数据</div>
+      )}
+
+      {/* 赛后分析弹窗 */}
+      {analyticsMatchId && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => { setAnalyticsMatchId(null); setAnalyticsData(null) }}
+        >
+          <div
+            className="bg-slate-800 border border-slate-600 rounded-lg max-w-4xl w-full max-h-[85vh] overflow-y-auto p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">赛后分析 — {analyticsMatchId}</h3>
+              <button
+                onClick={() => { setAnalyticsMatchId(null); setAnalyticsData(null) }}
+                className="text-slate-400 hover:text-slate-200 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {analyticsLoading && <div className="text-center text-slate-400 py-8">加载中…</div>}
+
+            {analyticsData && (
+              <>
+                {/* 汇总 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-700/50 rounded-md p-3">
+                    <div className="text-xs text-slate-400">总提交</div>
+                    <div className="text-xl font-semibold">{analyticsData.summary.total_submissions}</div>
+                  </div>
+                  <div className="bg-slate-700/50 rounded-md p-3">
+                    <div className="text-xs text-slate-400">成功利用</div>
+                    <div className="text-xl font-semibold text-emerald-400">{analyticsData.summary.total_successful}</div>
+                  </div>
+                  <div className="bg-slate-700/50 rounded-md p-3">
+                    <div className="text-xs text-slate-400">最快利用</div>
+                    <div className="text-xl font-semibold text-cyan-400">
+                      {formatSeconds(analyticsData.summary.fastest_exploit_seconds)}
+                    </div>
+                  </div>
+                  <div className="bg-slate-700/50 rounded-md p-3">
+                    <div className="text-xs text-slate-400">有/无利用选手</div>
+                    <div className="text-xl font-semibold">
+                      {analyticsData.summary.players_with_exploit}/{analyticsData.summary.players_without_exploit}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 选手分析表 */}
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-600 text-left text-slate-300">
+                      <th className="py-2">选手</th>
+                      <th className="py-2 text-right">首次利用</th>
+                      <th className="py-2 text-right">攻陷槽位</th>
+                      <th className="py-2 text-right">提交</th>
+                      <th className="py-2 text-right">成功率</th>
+                      <th className="py-2 text-right">得分/提交</th>
+                      <th className="py-2 text-right">总分</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyticsData.players.map((p) => (
+                      <tr key={p.player_id} className="border-b border-slate-700/50">
+                        <td className="py-2">
+                          <div className="font-medium">{p.display_name}</div>
+                          {p.model && <div className="text-xs text-slate-500">{p.model}</div>}
+                        </td>
+                        <td className="py-2 text-right font-mono text-cyan-300">
+                          {formatSeconds(p.time_to_first_exploit_seconds)}
+                        </td>
+                        <td className="py-2 text-right">
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {p.attack_slots_captured.map((s) => (
+                              <span key={s} className="px-1.5 py-0.5 bg-emerald-900/50 text-emerald-300 rounded text-xs">
+                                {s}
+                              </span>
+                            ))}
+                            {p.attack_slots_captured.length === 0 && <span className="text-slate-500">—</span>}
+                          </div>
+                        </td>
+                        <td className="py-2 text-right">{p.submissions_made}</td>
+                        <td className="py-2 text-right">{(p.submission_success_rate * 100).toFixed(0)}%</td>
+                        <td className="py-2 text-right font-mono">{p.score_per_submission.toFixed(0)}</td>
+                        <td className="py-2 text-right font-mono font-semibold">{p.total_score}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
