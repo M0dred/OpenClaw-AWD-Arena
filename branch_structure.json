@@ -1,0 +1,21 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "claude/check-repos-infection-rwre0x",
+    "claude/tailwind-config-cleanup-f5rnf1",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "claude/check-repos-infection-rwre0x": "main",
+    "claude/tailwind-config-cleanup-f5rnf1": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "claude/check-repos-infection-rwre0x",
+    "claude/tailwind-config-cleanup-f5rnf1",
+    "origin"
+  ]
+}
